@@ -1,0 +1,180 @@
+---
+title: "Machine Learning Course Project"
+author: "Alvinne Asejo"
+date: "August 3, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## PRACTICAL MACHINE LEARNING COURSE PROJECT
+
+
+### I. INTRODUCTION
+
+This project is aimed to analyze and use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. We then insert these data to our developed models in order to predict the manner in which they did the exercise.
+
+In this documentation, you are about to see the process of how to build and develop a model, how to use cross validation, and how to determine the expected sample error that will justify the models' performances.
+
+For an overview, here is the **background** provided for this Prediction Assignment Writeup:
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+### II. DATA EXPLORATION
+
+First, in order to have as smooth running of data, we load all libraries that will be needed for this documentation. We will also read and load the Train and Test data provided. 
+```{r message=FALSE, warning=FALSE}
+
+library(randomForest)
+library(caret)
+library(gbm)
+library(rpart)
+
+#Reading the file
+test <- read.csv("pml-testing.csv")
+train <- read.csv("pml-training.csv")
+
+```
+
+
+Afterwhich, we shall now explore the data in order to be familiar with it. As you can see, I have used the dim function. 
+
+```{r}
+
+#Determining the number of rows and columns
+dim(train)
+
+```
+
+
+We will also split the Training file to "Train" and "Test", with a ratio of 70% to 30%. Being able to explore the data first, it has helped me determine the optimal split ratio, depending on the size of the data provided. So again, for this case, we have used 70-30.
+
+```{r}
+
+#Splitting Train Data
+inTrain_data <- createDataPartition(y=train$classe, p = 0.7, list = F)
+training_data <- train[inTrain_data,]
+testing_data <- train[-inTrain_data,]
+
+```
+
+
+## III. DATA CLEANING
+
+Being able to explore the data, we now proceed to its cleaning methodologies. Anything applied to the train dataset will also be applied to the test dataset. Hence, the processes that we have implemented on both datasets are: (1) Removed columns that hvae greater than 50% NAs, (2) Remove columns that have Near Zero Value, (3) Remove unnecessary variables, and (4) Remove columns that are highly correlated.
+
+All in all, the variables are cut down to 33, which was originally 160.
+
+```{r warnings=FALSE}
+
+#Removing columns that have greater than 50% NAs
+fiftyNAs    <- sapply(training_data, function(x) mean(is.na(x))) > 0.50
+training_data <- training_data[, fiftyNAs==FALSE]
+testing_data  <- testing_data[, fiftyNAs==FALSE]
+
+#Removing columns with values near zero for they do not have such effect in the predictions
+NZV <- nearZeroVar(training_data)
+training_data <- training_data[, -NZV]
+testing_data  <- testing_data[, -NZV]
+
+#Removing identification variables
+training_data <- training_data[, -(1:5)]
+testing_data  <- testing_data[, -(1:5)]
+
+#Determining which columns are highly correlated and then remove them for they provide the same effect towards prediction
+cor_mat <- cor(training_data[, -54])
+highlyCorrelated = findCorrelation(cor(training_data[,-54]), cutoff=0.75)
+names(training_data)[highlyCorrelated]
+
+training_data <- training_data[, -(highlyCorrelated)]
+testing_data <- testing_data[, -(highlyCorrelated)]
+
+
+#Determining how many variables are left after all of the cleaning done
+dim(training_data)
+
+```
+
+
+## IV. DEVELOPING MODELS
+
+Let us start with classification models, specifically Random Forest. This uses individual tree that spits out a class prediction and the class with the most votes becomes our model's prediction.
+
+###A.) RANDOM FOREST
+```{r}
+
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+
+#Train the Model
+modRF1 <- train(classe ~ ., data=training_data, method="rf", trControl=controlRF)
+modRF1$finalModel
+
+#Predict
+predictRF1 <- predict(modRF1, newdata=testing_data)
+
+#Show the confusion matrix / results
+cmrf <- confusionMatrix(predictRF1, testing_data$classe)
+cmrf
+
+```
+
+
+###B.) GBM
+
+Next is the GBM or the Gradient Boosting Machine, which is a prediction model in the form of an ensemble of weak prediction models, typically decision trees.
+```{r}
+
+#Train the model
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=training_data, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+
+#Predict
+predictGBM <- predict(modGBM, newdata=testing_data)
+
+#Show the confusion matrix / results
+cmGBM <- confusionMatrix(predictGBM, testing_data$classe)
+cmGBM
+
+```
+
+
+###C.) DECISION TREE
+
+Lastly, is a decision tree. It is a decision support tool that uses a tree-like model of decisions and their possible consequences, including chance event outcomes, resource costs, and utility.
+```{r}
+
+#Training the model
+decisionTreeMod1 <- rpart(classe ~ ., data=training_data, method="class")
+
+#Predict
+predictTreeMod1 <- predict(decisionTreeMod1, testing_data, type = "class")
+
+#Show the confusion matrix
+cmtree <- confusionMatrix(predictTreeMod1, testing_data$classe)
+cmtree
+
+```
+
+
+## V. SUMMARY
+
+After all of the development of models, here are the results, specifically the accuracies of the three models.
+
+1. Random Forest - 99% Accuracy score
+2. GBM - 98% Accuracy score
+3. Decision Tree - 81% Accuracy score
+
+Based on the results above, it is obvious that Random Forest has the highest Accuracy score, which is why we will implement or choose this model as seen below.
+
+```{r}
+
+FinalResult <- predict(modRF1, newdata=test)
+FinalResult
+
+```
+
+Therefore, the predictions above are the final results needed for the documentation. 
